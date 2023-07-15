@@ -38,9 +38,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             f"Could not find AC Infinity device with address {address}"
         )
 
-    controller = ACInfinityController(
-        ble_device, DeviceInfo(**entry.data[CONF_SERVICE_DATA])
-    )
+    device_info: DeviceInfo | dict = entry.data[CONF_SERVICE_DATA]
+    if type(device_info) is dict:
+        device_info = DeviceInfo(**entry.data[CONF_SERVICE_DATA])
+    controller = ACInfinityController(ble_device, device_info)
 
     @callback
     def _async_update_ble(
