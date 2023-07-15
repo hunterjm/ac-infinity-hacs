@@ -1,0 +1,24 @@
+{
+  "version": "1.0.0",
+  "domain": "ac_infinity",
+  "name": "AC Infinity",
+  "bluetooth": [
+    {
+      "connectable": true,
+      "manufacturer_id": 2306
+    }
+  ],
+  "codeowners": [
+    "@hunterjm"
+  ],
+  "config_flow": true,
+  "dependencies": [
+    "bluetooth_adapters"
+  ],
+  "documentation": "https://github.com/hunterjm/ac-infinity-hacs",
+  "issue_tracker": "https://github.com/hunterjm/ac-infinity-hacs/issues",
+  "iot_class": "local_push",
+  "requirements": [
+    "ac-infinity-ble==0.4.1"
+  ]
+}
