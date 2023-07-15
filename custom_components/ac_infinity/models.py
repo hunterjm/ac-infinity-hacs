@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 from ac_infinity_ble import ACInfinityController
 
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from .coordinator import ACInfinityDataUpdateCoordinator
 
 
 @dataclass
@@ -14,4 +14,4 @@ class ACInfinityData:
 
     title: str
     device: ACInfinityController
-    coordinator: DataUpdateCoordinator
+    coordinator: ACInfinityDataUpdateCoordinator

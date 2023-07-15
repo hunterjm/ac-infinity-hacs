@@ -8,15 +8,14 @@ from ac_infinity_ble import ACInfinityController
 
 from homeassistant.components.fan import FanEntity, FanEntityFeature
 
+from homeassistant.components.bluetooth.passive_update_coordinator import (
+    PassiveBluetoothCoordinatorEntity,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import (
-    CoordinatorEntity,
-    DataUpdateCoordinator,
-)
 from homeassistant.util.percentage import (
     int_states_in_range,
     ranged_value_to_percentage,
@@ -24,6 +23,7 @@ from homeassistant.util.percentage import (
 )
 
 from .const import DEVICE_MODEL, DOMAIN
+from .coordinator import ACInfinityDataUpdateCoordinator
 from .models import ACInfinityData
 
 SPEED_RANGE = (1, 10)
@@ -39,7 +39,9 @@ async def async_setup_entry(
     async_add_entities([ACInfinityFan(data.coordinator, data.device, entry.title)])
 
 
-class ACInfinityFan(CoordinatorEntity, FanEntity):
+class ACInfinityFan(
+    PassiveBluetoothCoordinatorEntity[ACInfinityDataUpdateCoordinator], FanEntity
+):
     """Representation of AC Infinity sensor."""
 
     _attr_speed_count = int_states_in_range(SPEED_RANGE)
@@ -47,7 +49,7 @@ class ACInfinityFan(CoordinatorEntity, FanEntity):
 
     def __init__(
         self,
-        coordinator: DataUpdateCoordinator,
+        coordinator: ACInfinityDataUpdateCoordinator,
         device: ACInfinityController,
         name: str,
     ) -> None:
@@ -72,7 +74,6 @@ class ACInfinityFan(CoordinatorEntity, FanEntity):
             speed = math.ceil(percentage_to_ranged_value(SPEED_RANGE, percentage))
 
         await self._device.set_speed(speed)
-        self._async_update_attrs()
 
     async def async_turn_on(
         self,
@@ -85,12 +86,10 @@ class ACInfinityFan(CoordinatorEntity, FanEntity):
         if percentage is not None:
             speed = math.ceil(percentage_to_ranged_value(SPEED_RANGE, percentage))
         await self._device.turn_on(speed)
-        self._async_update_attrs()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off the fan."""
         await self._device.turn_off()
-        self._async_update_attrs()
 
     @callback
     def _async_update_attrs(self) -> None:

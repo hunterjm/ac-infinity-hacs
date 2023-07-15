@@ -19,6 +19,6 @@
   "issue_tracker": "https://github.com/hunterjm/ac-infinity-hacs/issues",
   "iot_class": "local_push",
   "requirements": [
-    "ac-infinity-ble==0.4.1"
+    "ac-infinity-ble==0.4.2"
   ]
 }

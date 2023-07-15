@@ -10,19 +10,18 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 
+from homeassistant.components.bluetooth.passive_update_coordinator import (
+    PassiveBluetoothCoordinatorEntity,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import PERCENTAGE, UnitOfPressure, UnitOfTemperature
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.typing import UndefinedType
-from homeassistant.helpers.update_coordinator import (
-    CoordinatorEntity,
-    DataUpdateCoordinator,
-)
 
 from .const import DEVICE_MODEL, DOMAIN
+from .coordinator import ACInfinityDataUpdateCoordinator
 from .models import ACInfinityData
 
 
@@ -33,21 +32,23 @@ async def async_setup_entry(
 ) -> None:
     """Set up the light platform for LEDBLE."""
     data: ACInfinityData = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities(
-        [
-            TemperatureSensor(data.coordinator, data.device, entry.title),
-            HumiditySensor(data.coordinator, data.device, entry.title),
-            VpdSensor(data.coordinator, data.device, entry.title),
-        ]
-    )
+    entities = [
+        TemperatureSensor(data.coordinator, data.device, entry.title),
+        HumiditySensor(data.coordinator, data.device, entry.title),
+    ]
+    if data.device.state.version >= 3 and data.device.state.type in [7, 9, 11, 12]:
+        entities.append(VpdSensor(data.coordinator, data.device, entry.title))
+    async_add_entities(entities)
 
 
-class ACInfinitySensor(CoordinatorEntity, SensorEntity):
+class ACInfinitySensor(
+    PassiveBluetoothCoordinatorEntity[ACInfinityDataUpdateCoordinator], SensorEntity
+):
     """Representation of AC Infinity sensor."""
 
     def __init__(
         self,
-        coordinator: DataUpdateCoordinator,
+        coordinator: ACInfinityDataUpdateCoordinator,
         device: ACInfinityController,
         name: str,
     ) -> None:
