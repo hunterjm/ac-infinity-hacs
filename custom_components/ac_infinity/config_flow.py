@@ -99,11 +99,17 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return self.async_abort(reason="no_devices_found")
 
         devices = {}
+        _LOGGER.debug(f"self._discovered_devices: {self._discovered_devices}")
         for service_info in self._discovered_devices.values():
-            device = parse_manufacturer_data(
-                service_info.advertisement.manufacturer_data[MANUFACTURER_ID]
-            )
-            devices[service_info.address] = f"{device.name} ({service_info.address})"
+            _LOGGER.debug(f"service_info: {service_info.advertisement.manufacturer_data}")
+            try:
+                device = parse_manufacturer_data(
+                    service_info.advertisement.manufacturer_data[MANUFACTURER_ID]
+                )
+                devices[service_info.address] = f"{device.name} ({service_info.address})"
+            except KeyError:
+                # Discovered device is not an AC Infinity device
+                pass
 
         data_schema = vol.Schema(
             {
