@@ -1,49 +1,39 @@
 """The ac_infinity sensor platform."""
+
 from __future__ import annotations
-from typing import Any
 
 from ac_infinity_ble import ACInfinityController
-
 from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
     SensorStateClass,
 )
-
-from homeassistant.components.bluetooth.passive_update_coordinator import (
-    PassiveBluetoothCoordinatorEntity,
-)
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import PERCENTAGE, UnitOfPressure, UnitOfTemperature
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DEVICE_MODEL, DOMAIN
 from .coordinator import ACInfinityDataUpdateCoordinator
-from .models import ACInfinityData
+from .entity import ACInfinityEntity
+from .models import ACInfinityConfigEntry, ACInfinityData
 
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: ACInfinityConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up the light platform for LEDBLE."""
-    data: ACInfinityData = hass.data[DOMAIN][entry.entry_id]
+    """Set up AC Infinity entities."""
+    data: ACInfinityData = entry.runtime_data
     entities = [
         TemperatureSensor(data.coordinator, data.device, entry.title),
         HumiditySensor(data.coordinator, data.device, entry.title),
     ]
-    if data.device.state.version >= 3 and data.device.state.type in [7, 9, 11, 12]:
+    if data.device.state.version >= 3:
         entities.append(VpdSensor(data.coordinator, data.device, entry.title))
     async_add_entities(entities)
 
 
-class ACInfinitySensor(
-    PassiveBluetoothCoordinatorEntity[ACInfinityDataUpdateCoordinator], SensorEntity
-):
+class ACInfinitySensor(ACInfinityEntity, SensorEntity):
     """Representation of AC Infinity sensor."""
 
     def __init__(
@@ -53,35 +43,15 @@ class ACInfinitySensor(
         name: str,
     ) -> None:
         """Initialize an AC Infinity sensor."""
-        super().__init__(coordinator)
+        super().__init__(coordinator, device, name)
         self._device = device
         self._name = name
-        self._attr_device_info = DeviceInfo(
-            name=device.name,
-            model=DEVICE_MODEL[device.state.type],
-            manufacturer="AC Infinity",
-            sw_version=device.state.version,
-            connections={(dr.CONNECTION_BLUETOOTH, device.address)},
-        )
         self._async_update_attrs()
 
     @callback
     def _async_update_attrs(self) -> None:
         """Handle updating _attr values."""
         raise NotImplementedError("Not yet implemented.")
-
-    @callback
-    def _handle_coordinator_update(self, *args: Any) -> None:
-        """Handle data update."""
-        self._async_update_attrs()
-        self.async_write_ha_state()
-
-    async def async_added_to_hass(self) -> None:
-        """Register callbacks."""
-        self.async_on_remove(
-            self._device.register_callback(self._handle_coordinator_update)
-        )
-        return await super().async_added_to_hass()
 
 
 class TemperatureSensor(ACInfinitySensor):
@@ -127,7 +97,6 @@ class HumiditySensor(ACInfinitySensor):
 
 class VpdSensor(ACInfinitySensor):
     _attr_native_unit_of_measurement = UnitOfPressure.KPA
-    _attr_device_class = SensorDeviceClass.ATMOSPHERIC_PRESSURE
     _attr_state_class = SensorStateClass.MEASUREMENT
 
     @property

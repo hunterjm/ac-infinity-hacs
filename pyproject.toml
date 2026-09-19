@@ -1,0 +1,26 @@
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+extend-exclude = [".venv"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "UP", "B", "RUF100"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["custom_components"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.semantic_release]
+version_variables = ["custom_components/ac_infinity/manifest.json:version"]
+commit_parser = "conventional"
+commit_message = "chore(release): {version} [skip ci]"
+allow_zero_version = false
+tag_format = "v{version}"
+
+[tool.semantic_release.branches.main]
+match = "main"
+
+[tool.semantic_release.publish]
+dist_glob_patterns = []

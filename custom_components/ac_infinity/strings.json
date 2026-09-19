@@ -3,11 +3,23 @@
     "step": {
       "confirm": {
         "description": "[%key:common::config_flow::description::confirm_setup%]"
+      },
+      "user": {
+        "title": "Set up AC Infinity Bluetooth",
+        "data": {
+          "address": "Device"
+        }
       }
     },
     "abort": {
       "single_instance_allowed": "[%key:common::config_flow::abort::single_instance_allowed%]",
-      "no_devices_found": "[%key:common::config_flow::abort::no_devices_found%]"
+      "no_devices_found": "[%key:common::config_flow::abort::no_devices_found%]",
+      "not_supported": "This Bluetooth device or advertisement format is not supported.",
+      "already_configured": "This device is already configured."
+    },
+    "error": {
+      "cannot_connect": "Unable to communicate with the controller.",
+      "unknown": "An unexpected error occurred."
     }
   }
 }
