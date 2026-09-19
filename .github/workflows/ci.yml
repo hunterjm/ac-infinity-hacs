@@ -1,0 +1,111 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+  workflow_dispatch:
+    inputs:
+      library_ref:
+        description: Optional library branch, tag or SHA; blank uses the published requirement
+        default: ""
+        required: false
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: home-assistant/actions/hassfest@master
+
+  release-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-release.txt
+      - name: Validate the squash commit title
+        if: github.event_name == 'pull_request'
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          python -c 'import os; from semantic_release.commit_parser.conventional import ConventionalCommitParser; assert ConventionalCommitParser().parse_message(os.environ["PR_TITLE"]), "Use a Conventional Commit PR title: feat:, fix:, docs:, or feat!: for breaking changes"'
+      - name: Test versioning and tagged HACS manifests without publishing
+        run: pytest tests_release -q
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+      - run: pip install -r requirements-test.txt -r requirements-ha-test.txt
+      - uses: actions/checkout@v6
+        if: inputs.library_ref != ''
+        with:
+          repository: hunterjm/ac-infinity-ble
+          ref: ${{ inputs.library_ref }}
+          path: library
+      - name: Install the published library requirement
+        if: inputs.library_ref == ''
+        run: |
+          python -c 'import json, subprocess, sys; requirements = json.load(open("custom_components/ac_infinity/manifest.json"))["requirements"]; subprocess.check_call([sys.executable, "-m", "pip", "install", *requirements])'
+      - name: Install the requested library wheel
+        if: inputs.library_ref != ''
+        run: |
+          pip wheel --no-deps ./library -w /tmp/ac-wheels
+          pip install /tmp/ac-wheels/*.whl
+      - name: Enforce the manifest pin
+        run: |
+          python -c 'import json; from importlib.metadata import version; from packaging.requirements import Requirement; requirements = [Requirement(r) for r in json.load(open("custom_components/ac_infinity/manifest.json"))["requirements"]]; assert all(version(r.name) in r.specifier for r in requirements), "Built library does not match the manifest pin"'
+      - run: ruff check custom_components tests tests_ha tests_release
+      - run: ruff format --check custom_components tests tests_ha tests_release
+      - name: Unit tests (Home Assistant API doubles)
+        run: pytest tests
+      - name: Real Home Assistant API and lifecycle tests (mock Bluetooth)
+        run: PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -p pytest_asyncio.plugin tests_ha
+
+  release:
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' ||
+       (github.event_name == 'workflow_dispatch' && inputs.library_ref == ''))
+    needs: [validate, release-checks, test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-release.txt
+      - name: Skip an obsolete workflow run
+        id: current
+        shell: bash
+        run: |
+          git fetch origin main
+          if [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ]; then
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Preview release
+        if: steps.current.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: semantic-release --noop version
+      - name: Update manifest, tag and publish GitHub release
+        if: steps.current.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: semantic-release version

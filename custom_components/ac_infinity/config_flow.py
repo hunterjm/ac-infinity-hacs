@@ -1,14 +1,14 @@
 """Config flow for ac_infinity."""
+
 from __future__ import annotations
 
 import logging
 from typing import Any
 
-from ac_infinity_ble import ACInfinityController, DeviceInfo
-from ac_infinity_ble.protocol import parse_manufacturer_data
-from ac_infinity_ble.const import MANUFACTURER_ID
 import voluptuous as vol
-
+from ac_infinity_ble import ACInfinityController
+from ac_infinity_ble.const import MANUFACTURER_ID
+from ac_infinity_ble.protocol import parse_manufacturer_data
 from homeassistant import config_entries
 from homeassistant.components.bluetooth import (
     BluetoothServiceInfoBleak,
@@ -19,7 +19,6 @@ from homeassistant.data_entry_flow import FlowResult
 
 from .const import BLEAK_EXCEPTIONS, DOMAIN
 
-
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -27,6 +26,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for AC Infinity Bluetooth."""
 
     VERSION = 1
+    MINOR_VERSION = 3
 
     def __init__(self) -> None:
         """Initialize the config flow."""
@@ -40,10 +40,13 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         await self.async_set_unique_id(discovery_info.address)
         self._abort_if_unique_id_configured()
         self._discovery_info = discovery_info
-        device: DeviceInfo = parse_manufacturer_data(
-            discovery_info.advertisement.manufacturer_data[MANUFACTURER_ID]
-        )
-        self.context["title_placeholders"] = {"name": device.name}
+        try:
+            device = parse_manufacturer_data(
+                discovery_info.advertisement.manufacturer_data[MANUFACTURER_ID]
+            )
+        except (KeyError, ValueError):
+            return self.async_abort(reason="not_supported")
+        self.context["title_placeholders"] = {"name": device.display_name}
         return await self.async_step_user()
 
     async def async_step_user(
@@ -70,18 +73,20 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 _LOGGER.exception("Unexpected error")
                 errors["base"] = "unknown"
             else:
-                await controller.stop()
                 return self.async_create_entry(
-                    title=controller.name,
+                    title=controller.state.display_name,
                     data={
                         CONF_ADDRESS: discovery_info.address,
-                        CONF_SERVICE_DATA: parse_manufacturer_data(
-                            discovery_info.advertisement.manufacturer_data[
-                                MANUFACTURER_ID
-                            ]
-                        ),
+                        CONF_SERVICE_DATA: {
+                            "type": controller.state.type,
+                            "name": controller.name,
+                            "version": controller.state.version,
+                        },
                     },
                 )
+
+            finally:
+                await controller.stop()
 
         if discovery := self._discovery_info:
             self._discovered_devices[discovery.address] = discovery
@@ -93,6 +98,12 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     or discovery.address in self._discovered_devices
                 ):
                     continue
+                try:
+                    parse_manufacturer_data(
+                        discovery.manufacturer_data[MANUFACTURER_ID]
+                    )
+                except (KeyError, ValueError):
+                    continue
                 self._discovered_devices[discovery.address] = discovery
 
         if not self._discovered_devices:
@@ -103,7 +114,9 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             device = parse_manufacturer_data(
                 service_info.advertisement.manufacturer_data[MANUFACTURER_ID]
             )
-            devices[service_info.address] = f"{device.name} ({service_info.address})"
+            devices[service_info.address] = (
+                f"{device.display_name} ({service_info.address})"
+            )
 
         data_schema = vol.Schema(
             {

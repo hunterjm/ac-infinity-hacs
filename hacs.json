@@ -1,5 +1,4 @@
 {
-    "name": "AC Infinity",
-    "render_readme": true,
-    "homeassistant": "2023.7.0"
+  "name": "AC Infinity",
+  "homeassistant": "2026.9.0"
 }

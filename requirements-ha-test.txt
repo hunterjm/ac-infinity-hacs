@@ -1,0 +1,13 @@
+# Home Assistant 2026.9.3 and its Bluetooth dependency manifests.
+homeassistant==2026.9.3
+aiousbwatcher==1.1.2
+bleak-retry-connector==4.7.0
+bleak==3.0.2
+bluetooth-adapters==2.4.0
+bluetooth-auto-recovery==1.6.4
+bluetooth-data-tools==1.29.24
+dbus-fast==5.0.22
+habluetooth==6.26.11
+serialx==1.10.0
+# USB discovery imports Supervisor helpers.
+aiohasupervisor==0.6.0
