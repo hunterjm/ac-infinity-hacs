@@ -18,8 +18,13 @@ from homeassistant.components.bluetooth.active_update_coordinator import (
 from homeassistant.core import CoreState, HomeAssistant, callback
 
 DEVICE_STARTUP_TIMEOUT = 30
-PORT_FRESHNESS = 30
+# Advertisements already carry temperature, humidity, VPD and the level of the
+# port shown on the controller, so a connection is only needed for per-port
+# detail. Refresh it routinely at the settings cadence (one connection serves
+# both), or sooner when an advertisement shows the output has changed.
+TELEMETRY_FRESHNESS = 300
 SETTINGS_FRESHNESS = 300
+POLL_RETRY_BASE = 30
 MAX_POLL_BACKOFF = 300
 
 
@@ -48,6 +53,9 @@ class ACInfinityDataUpdateCoordinator(ActiveBluetoothDataUpdateCoordinator[None]
         self._ready_event = asyncio.Event()
         self._was_unavailable = True
         self._last_telemetry: float | None = None
+        self._last_advert: tuple[int | None, int | None] | None = None
+        self._advert_at_telemetry: tuple[int | None, int | None] | None = None
+        self._telemetry_stale = False
         self._settings_read: dict[int, tuple[float, str | None, int | None]] = {}
         self._poll_failures = 0
         self._next_poll = 0.0
@@ -59,8 +67,21 @@ class ACInfinityDataUpdateCoordinator(ActiveBluetoothDataUpdateCoordinator[None]
 
     @callback
     def _controller_updated(self, state: DeviceInfo, kind: CallbackType) -> None:
+        if kind == CallbackType.ADVERTISEMENT:
+            # Compare advertisement with advertisement, never with telemetry, so a
+            # model whose advertised level means something different cannot keep
+            # the coordinator permanently stale.
+            advert = (state.fan, state.choose_port)
+            self._last_advert = advert
+            if (
+                self._advert_at_telemetry is not None
+                and advert != self._advert_at_telemetry
+            ):
+                self._telemetry_stale = True
         if kind == CallbackType.NOTIFICATION:
             self._last_telemetry = monotonic()
+            self._advert_at_telemetry = self._last_advert
+            self._telemetry_stale = False
             for port_id, (_, load_kind, raw_type) in list(self._settings_read.items()):
                 if port_id == 0:
                     continue
@@ -84,6 +105,13 @@ class ACInfinityDataUpdateCoordinator(ActiveBluetoothDataUpdateCoordinator[None]
             or now - self._settings_read[port][0] >= SETTINGS_FRESHNESS
         )
 
+    def _telemetry_due(self) -> bool:
+        return (
+            self._last_telemetry is None
+            or self._telemetry_stale
+            or monotonic() - self._last_telemetry >= TELEMETRY_FRESHNESS
+        )
+
     @callback
     def _needs_poll(
         self,
@@ -97,11 +125,7 @@ class ACInfinityDataUpdateCoordinator(ActiveBluetoothDataUpdateCoordinator[None]
             and self.controller.state.profile.writable
             and self.hass.state == CoreState.running
             and monotonic() >= self._next_poll
-            and (
-                self._last_telemetry is None
-                or monotonic() - self._last_telemetry >= PORT_FRESHNESS
-                or bool(self._settings_due(monotonic()))
-            )
+            and (self._telemetry_due() or bool(self._settings_due(monotonic())))
             and bool(
                 bluetooth.async_ble_device_from_address(
                     self.hass, service_info.device.address, connectable=True
@@ -120,17 +144,14 @@ class ACInfinityDataUpdateCoordinator(ActiveBluetoothDataUpdateCoordinator[None]
             # An initial GET opens the stream. Re-evaluate discovered ports afterward.
             if 0 in self._settings_due(monotonic()):
                 await self._read_settings(0)
-            if (
-                self._last_telemetry is None
-                or monotonic() - self._last_telemetry >= PORT_FRESHNESS
-            ):
+            if self._telemetry_due():
                 await self.controller.refresh_telemetry()
             for port in self._settings_due(monotonic()):
                 await self._read_settings(port)
         except Exception:
             self._poll_failures = min(self._poll_failures + 1, 5)
             self._next_poll = monotonic() + min(
-                PORT_FRESHNESS * 2 ** (self._poll_failures - 1), MAX_POLL_BACKOFF
+                POLL_RETRY_BASE * 2 ** (self._poll_failures - 1), MAX_POLL_BACKOFF
             )
             raise
         else:

@@ -44,27 +44,65 @@ def test_polling_separates_actual_output_from_saved_settings(integration, monkey
         assert device.update.await_args_list == [call(0), call(1)]
         assert not c._needs_poll(service, 0)
         clock.return_value += 30
-        assert c._needs_poll(service, 30)
-        await c._async_update(service)
-        assert device.update.await_count == 2
-        assert device.refresh_telemetry.await_count == 2
+        assert not c._needs_poll(service, 30)
         clock.return_value = 1300
+        assert c._needs_poll(service, 300)
         await c._async_update(service)
+        # One routine connection refreshes telemetry and saved settings together.
+        assert device.refresh_telemetry.await_count == 2
         assert device.update.await_args_list == [call(0), call(1), call(0), call(1)]
 
     asyncio.run(exercise())
 
 
-def test_notifications_defer_port_poll_but_advertisements_do_not(
-    integration, monkeypatch
+def advertise(c, device, **changes):
+    device.state = replace(device.state, **changes)
+    c._controller_updated(device.state, CallbackType.ADVERTISEMENT)
+
+
+def test_unchanged_advertisements_do_not_poll(integration, monkeypatch):
+    async def exercise():
+        c, device, clock, service = setup_polling(integration, monkeypatch)
+        advertise(c, device, fan=5, choose_port=1)
+        await c._async_update(service)
+        for _ in range(10):
+            clock.return_value += 25
+            advertise(c, device, fan=5, choose_port=1)
+            assert not c._needs_poll(service, None)
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("change", [{"fan": 7}, {"choose_port": 2}])
+def test_changed_advertisement_refreshes_telemetry_early(
+    integration, monkeypatch, change
 ):
     async def exercise():
         c, device, clock, service = setup_polling(integration, monkeypatch)
+        advertise(c, device, fan=5, choose_port=1)
         await c._async_update(service)
         clock.return_value += 30
-        c._controller_updated(device.state, CallbackType.ADVERTISEMENT)
+        advertise(c, device, **change)
         assert c._needs_poll(service, 30)
+        await c._async_update(service)
+        assert device.refresh_telemetry.await_count == 2
+        # Saved settings are not re-read just because the output moved.
+        assert device.update.await_count == 2
+        assert not c._needs_poll(service, 0)
+
+    asyncio.run(exercise())
+
+
+def test_advertised_level_is_never_compared_with_telemetry(integration, monkeypatch):
+    async def exercise():
+        c, device, clock, service = setup_polling(integration, monkeypatch)
+        advertise(c, device, fan=5, choose_port=1)
+        await c._async_update(service)
+        # Telemetry may report a different level for the same port on some models.
+        device.state = replace(device.state, fan=3)
         c._controller_updated(device.state, CallbackType.NOTIFICATION)
+        clock.return_value += 30
+        advertise(c, device, fan=5, choose_port=1)
         assert not c._needs_poll(service, 30)
 
     asyncio.run(exercise())
