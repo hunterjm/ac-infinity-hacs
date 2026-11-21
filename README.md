@@ -66,9 +66,12 @@ failures await cleanup.
 
 ## Polling
 
-Climate updates arrive through advertisements. Port telemetry has a 30-second
-freshness target; saved settings are read on startup, when loads change, and every
-five minutes. Failed background polls back off up to five minutes; user commands
+Climate readings and the level of the port shown on the controller arrive through
+advertisements, so the integration connects as little as possible. Port telemetry
+is refreshed every five minutes, together with the saved settings, and sooner when
+an advertisement shows the advertised level or selected port has changed. Saved
+settings are also read on startup and when loads change. Failed background polls
+back off up to five minutes; user commands
 bypass that delay. Polling follows Home Assistant Bluetooth events and requires a
 connectable route, so these intervals are freshness targets rather than fixed timers.
 Unload cancels an active poll and awaits connection cleanup.
