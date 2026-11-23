@@ -15,8 +15,9 @@ from homeassistant.const import (
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.event import async_track_time_interval
 
-from .coordinator import ACInfinityDataUpdateCoordinator
+from .coordinator import POLL_CHECK_INTERVAL, ACInfinityDataUpdateCoordinator
 from .metadata import controller_device_info
 from .models import ACInfinityConfigEntry, ACInfinityData
 
@@ -94,6 +95,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ACInfinityConfigEntry) -
         )
         if not await coordinator.async_wait_ready():
             raise ConfigEntryNotReady(f"{address} is not advertising state")
+        entry.async_on_unload(
+            async_track_time_interval(
+                hass,
+                coordinator.async_check_poll,
+                POLL_CHECK_INTERVAL,
+                name="AC Infinity poll check",
+                cancel_on_shutdown=True,
+            )
+        )
 
         last_metadata = None
 

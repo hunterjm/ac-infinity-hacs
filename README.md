@@ -71,6 +71,9 @@ freshness target; saved settings are read on startup, when loads change, and eve
 five minutes. Failed background polls back off up to five minutes; user commands
 bypass that delay. Polling follows Home Assistant Bluetooth events and requires a
 connectable route, so these intervals are freshness targets rather than fixed timers.
+Home Assistant does not dispatch an advertisement that repeats the previous one, so
+the integration also rechecks every ten seconds against the latest sighting; this
+keeps controllers whose advertisements carry no live readings polling.
 Unload cancels an active poll and awaits connection cleanup.
 
 Selecting OFF preserves the saved minimum, which may allow physical fan movement.
