@@ -28,6 +28,7 @@ def integration(monkeypatch):
         "homeassistant.exceptions",
         "homeassistant.helpers",
         "homeassistant.helpers.device_registry",
+        "homeassistant.helpers.event",
     ]
     modules = {name: ModuleType(name) for name in module_names}
 
@@ -38,8 +39,17 @@ def integration(monkeypatch):
         def __init__(self, hass, logger, **kwargs):
             self.hass = hass
             self.logger = logger
+            self.address = kwargs["address"]
+            self._needs_poll_method = kwargs["needs_poll_method"]
             self._async_stop = Mock()
             self.listeners = []
+            self.handled_events = []
+
+        def needs_poll(self, service_info):
+            return self._needs_poll_method(service_info, None)
+
+        def _async_handle_bluetooth_event(self, service_info, change):
+            self.handled_events.append((service_info, change))
 
         def async_add_listener(self, listener):
             self.listeners.append(listener)
@@ -55,9 +65,10 @@ def integration(monkeypatch):
         SWITCH = "switch"
         NUMBER = "number"
 
-    modules[
-        "homeassistant.components.bluetooth"
-    ].BluetoothScanningMode = SimpleNamespace(ACTIVE="active")
+    bluetooth = modules["homeassistant.components.bluetooth"]
+    bluetooth.BluetoothScanningMode = SimpleNamespace(ACTIVE="active")
+    bluetooth.BluetoothChange = SimpleNamespace(ADVERTISEMENT="advertisement")
+    bluetooth.async_last_service_info = Mock(return_value=None)
     modules["homeassistant.components.bluetooth"].async_ble_device_from_address = Mock(
         return_value=SimpleNamespace(address="00:11:22:33:44:55")
     )
@@ -82,6 +93,7 @@ def integration(monkeypatch):
     registry.CONNECTION_BLUETOOTH = "bluetooth"
     registry.DeviceInfo = dict
     registry.async_get = Mock(return_value=Mock())
+    modules["homeassistant.helpers.event"].async_track_time_interval = Mock()
     for name, module in modules.items():
         monkeypatch.setitem(sys.modules, name, module)
     for name in list(sys.modules):
@@ -173,6 +185,23 @@ def test_setup_failure_releases_ble(integration, monkeypatch, failure):
         with pytest.raises(expected_error):
             await integration.async_setup_entry(hass, entry)
         controller.stop.assert_awaited_once()
+
+    asyncio.run(exercise())
+
+
+def test_setup_rechecks_polling_until_unload(integration, monkeypatch):
+    async def exercise():
+        controller, hass, entry = setup_objects(integration, monkeypatch)
+        await integration.async_setup_entry(hass, entry)
+        track = integration.async_track_time_interval
+        track.assert_called_once_with(
+            hass,
+            entry.runtime_data.coordinator.async_check_poll,
+            integration.POLL_CHECK_INTERVAL,
+            name="AC Infinity poll check",
+            cancel_on_shutdown=True,
+        )
+        entry.async_on_unload.assert_any_call(track.return_value)
 
     asyncio.run(exercise())
 

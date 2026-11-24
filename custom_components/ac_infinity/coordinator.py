@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+from datetime import datetime, timedelta
 from time import monotonic
 
 from ac_infinity_ble import ACInfinityController
@@ -21,6 +22,8 @@ DEVICE_STARTUP_TIMEOUT = 30
 PORT_FRESHNESS = 30
 SETTINGS_FRESHNESS = 300
 MAX_POLL_BACKOFF = 300
+# Shorter than PORT_FRESHNESS so a due poll starts within ten seconds of falling due.
+POLL_CHECK_INTERVAL = timedelta(seconds=10)
 
 
 class ACInfinityDataUpdateCoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
@@ -201,6 +204,27 @@ class ACInfinityDataUpdateCoordinator(ActiveBluetoothDataUpdateCoordinator[None]
         )
         self._was_unavailable = False
         super()._async_handle_bluetooth_event(service_info, change)
+
+    @callback
+    def async_check_poll(self, _now: datetime | None = None) -> None:
+        """Start a due poll even when the advertisement has not changed.
+
+        Home Assistant dispatches an advertisement only when its content changes.
+        A controller whose advertisement carries identity but no live readings
+        repeats the same bytes, so after setup no event would schedule another
+        poll. Home Assistant keeps the latest connectable sighting current and
+        drops it when the device disappears, so replaying it keeps polling tied to
+        a device that is actually in range. The base handler records the sighting
+        and schedules the poll; this class's handler is skipped because it would
+        re-apply advertised climate that live telemetry may since have replaced.
+        """
+        service_info = bluetooth.async_last_service_info(
+            self.hass, self.address, connectable=True
+        )
+        if service_info is not None and self.needs_poll(service_info):
+            super()._async_handle_bluetooth_event(
+                service_info, bluetooth.BluetoothChange.ADVERTISEMENT
+            )
 
     async def async_wait_ready(self) -> bool:
         """Wait for the device to be ready."""

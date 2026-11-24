@@ -159,6 +159,34 @@ async def test_real_coordinator_shutdown_cancels_active_poll(
         await hass.async_stop()
 
 
+@pytest.mark.asyncio
+async def test_real_poll_check_schedules_poll_from_unchanged_advertisement(
+    tmp_path, monkeypatch, bluetooth_api
+):
+    hass = HomeAssistant(str(tmp_path))
+    hass.set_state(CoreState.running)
+    device = ACInfinityController(bluetooth_api[0], DeviceInfo(11, "Test", 7))
+    coordinator = ACInfinityDataUpdateCoordinator(
+        hass, logging.getLogger(__name__), bluetooth_api[0], device
+    )
+    sighting = SimpleNamespace(device=bluetooth_api[0], time=0.0)
+    latest = Mock(return_value=sighting)
+    monkeypatch.setattr(ac_infinity.bluetooth, "async_last_service_info", latest)
+    schedule = Mock()
+    monkeypatch.setattr(coordinator._debounced_poll, "async_schedule_call", schedule)
+    try:
+        coordinator.async_check_poll()
+        latest.assert_called_once_with(hass, ADDRESS, connectable=True)
+        schedule.assert_called_once_with()
+        assert coordinator._last_service_info is sighting
+        latest.return_value = None
+        coordinator.async_check_poll()
+        schedule.assert_called_once_with()
+    finally:
+        await device.stop()
+        await hass.async_stop()
+
+
 @pytest.mark.parametrize(
     "platform", ["config_flow", "sensor", "fan", "light", "switch", "number"]
 )

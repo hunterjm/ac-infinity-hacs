@@ -117,6 +117,32 @@ def test_poll_cancellation_does_not_become_failure_backoff(integration, monkeypa
     asyncio.run(exercise())
 
 
+def test_unchanged_advertisement_still_polls_when_due(integration, monkeypatch):
+    async def exercise():
+        c, device, clock, service = setup_polling(integration, monkeypatch)
+        latest = integration.bluetooth.async_last_service_info
+        latest.return_value = service
+        c.async_check_poll()
+        latest.assert_called_with(c.hass, "test", connectable=True)
+        assert c.handled_events == [(service, "advertisement")]
+        await c._async_update(service)
+        clock.return_value += 29
+        c.async_check_poll()
+        assert len(c.handled_events) == 1
+        clock.return_value += 1
+        c.async_check_poll()
+        assert c.handled_events[1:] == [(service, "advertisement")]
+        # The replay must not re-apply an old advertisement to the controller.
+        device.set_ble_device_and_advertisement_data.assert_not_called()
+        # Home Assistant drops the sighting once the device disappears.
+        latest.return_value = None
+        clock.return_value += 30
+        c.async_check_poll()
+        assert len(c.handled_events) == 2
+
+    asyncio.run(exercise())
+
+
 @pytest.mark.parametrize("reason", ["sensor", "starting", "no-route"])
 def test_polling_requires_writable_running_connectable_device(
     integration, monkeypatch, reason
